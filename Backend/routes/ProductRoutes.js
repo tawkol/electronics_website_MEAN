@@ -1,20 +1,49 @@
-const Product  = require("../models/ProductsModelDB");
-const Feedback = require("../models/FeedbackModelDB")
-const User = require("../models/UserModelDB")
-const mongoose = require('mongoose');
-const upload = require("../middleware/upload");
-
-// const ProductsController = require("../controllers/ProductControllerDB");
-
-// auth -> authorization
-const auth = require("../middleware/AuthMWPermission");
-
-const express = require('express');
+// routes/productRoutes.js
+const express = require("express");
 const router = express.Router();
-
+const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 
-// getAllProductsCategories
+// Import Models
+const Product = require("../models/ProductsModelDB");
+const Feedback = require("../models/FeedbackModelDB");
+const User = require("../models/UserModelDB");
+
+// Import Middleware
+const upload = require("../middleware/upload");
+const auth = require("../middleware/AuthMWPermission");
+const languageMiddleware = require("../middleware/LanguageMW");
+
+// Import Utility Function
+const { localizeData } = require("../util/localize");
+
+// Apply Language Middleware to All Routes in this Router
+router.use(languageMiddleware);
+
+// Utility Function to Transform Product Data
+const transformProductData = (product, lang) => {
+  const productData = product.toObject();
+
+  // Localize name, description, and category
+  const localizedFields = ["name", "description", "category"];
+  const localizedData = localizeData(productData, lang, localizedFields);
+
+  // Replace localized fields in productData
+  localizedFields.forEach((field) => {
+    productData[field] = localizedData[field];
+  });
+
+  // Transform img_url from a comma-separated string to an array
+  productData.img_urls = productData.img_url
+    ? productData.img_url.split(",")
+    : [];
+
+  // Optionally remove the original img_url field
+  delete productData.img_url;
+
+  return productData;
+};
+
 /**
  * @swagger
  * /api/product/categories:
@@ -50,6 +79,38 @@ const jwt = require("jsonwebtoken");
  *               type: string
  *               example: "Error retrieving categories"
  */
+// router.get("/categories", async (req, res) => {
+//   try {
+//     const lang = req.lang;
+
+//     // Aggregation to group products by category and count them
+//     const categories = await Product.aggregate([
+//       {
+//         $group: {
+//           _id: `$category.${lang}`, // Group by the localized category field
+//           count: { $sum: 1 }, // Count the number of products per category
+//         },
+//       },
+//       {
+//         $project: {
+//           _id: 0,
+//           category: "$_id",
+//           count: 1,
+//         },
+//       },
+//       {
+//         $sort: { count: -1 }, // Optional: Sort categories by count descending
+//       },
+//     ]);
+
+//     res.status(200).json(categories);
+//   } catch (err) {
+//     console.error("Error retrieving categories:", err);
+//     res.status(400).send("Error retrieving categories");
+//   }
+// });
+
+// getProductByCategory
 router.get("/categories", async (req, res) => {
   try {
     // Get distinct category values using Mongoose aggregate
@@ -57,27 +118,24 @@ router.get("/categories", async (req, res) => {
       {
         $group: {
           _id: "$category", // Group by the category field
-          categoryCount: { $sum: 1 } // Count the number of products per category
-        }
-      }
+          categoryCount: { $sum: 1 }, // Count the number of products per category
+        },
+      },
     ]);
 
     // Map the results to the desired format
-    const distinctCategories = categories.map(category => ({
+    const distinctCategories = categories.map((category) => ({
       category: category._id, // _id holds the distinct category value
-      count: category.categoryCount
+      count: category.categoryCount,
     }));
 
     res.status(200).send(distinctCategories);
-
   } catch (err) {
     console.error(err); // Log the complete error for debugging
     res.status(400).send("Error retrieving categories");
   }
 });
 
-
-// getProductByCategory
 /**
  * @swagger
  * /api/product/category/{category}:
@@ -141,33 +199,29 @@ router.get("/categories", async (req, res) => {
  */
 router.get("/category/:category", async (req, res) => {
   try {
-    // البحث عن جميع المنتجات في الفئة المطلوبة باستخدام Mongoose
-    const products = await Product.find({
-      category: req.params.category
-    });
+    const lang = req.lang;
+    const requestedCategory = req.params.category;
 
-    // تحويل كل منتج وفصل img_url إلى مصفوفة
-    const transformedProducts = products.map(product => {
-      // تحويل بيانات المنتج إلى JSON
-      const productData = product.toObject(); // .toObject() بدلاً من .toJSON() في Mongoose
+    // Find the category in the specified language
+    const categoryFilter = {};
+    categoryFilter[`category.${lang}`] = requestedCategory;
 
-      // تحويل img_url من سلسلة نصية إلى مصفوفة
-      if (productData.img_url) {
-        productData.img_urls = productData.img_url.split(',');
-      } else {
-        productData.img_urls = [];
-      }
+    // Find products matching the localized category
+    const products = await Product.find({ ...categoryFilter });
 
-      // // إزالة الحقل الأصلي img_url إذا كنت ترغب في ذلك
-      // delete productData.img_url;
+    if (!products.length) {
+      return res.status(404).send("No products found in this category.");
+    }
 
-      return productData;
-    });
+    // Transform products to include localized fields and img_urls array
+    const transformedProducts = products.map((product) =>
+      transformProductData(product, lang)
+    );
 
-    res.status(200).send(transformedProducts);
+    res.status(200).json(transformedProducts);
   } catch (err) {
-    console.error(err); // تسجيل الخطأ بالكامل للمساعدة في التصحيح
-    res.status(400).send("Error retrieving product");
+    console.error("Error retrieving products by category:", err);
+    res.status(400).send("Error retrieving products");
   }
 });
 
@@ -225,34 +279,27 @@ router.get("/category/:category", async (req, res) => {
  *               type: string
  *               example: "Error retrieving products"
  */
+
 router.get("/", async (req, res) => {
   try {
-    // البحث عن جميع المنتجات باستخدام Mongoose
+    const lang = req.lang;
+
+    // Retrieve all products
     const products = await Product.find();
 
-    // تحويل الحقل img_url إلى مصفوفة
-    const transformedProducts = products.map(product => {
-      // تحويل بيانات المنتج إلى كائن JavaScript
-      const productData = product.toObject(); // استخدمنا toObject() بدلاً من toJSON()
+    // Transform products to include localized fields and img_urls array
+    const transformedProducts = products.map((product) =>
+      transformProductData(product, lang)
+    );
 
-      // تحويل img_url من سلسلة نصية إلى مصفوفة
-      productData.img_urls = productData.img_url ? productData.img_url.split(',') : [];
-
-      // // حذف الحقل الأصلي img_url إذا كان مطلوباً
-      // delete productData.img_url;
-
-      return productData;
-    });
-
-    res.status(200).send(transformedProducts);
+    res.status(200).json(transformedProducts);
   } catch (err) {
-    console.error(err); // تسجيل الخطأ بالكامل للمساعدة في التصحيح
-    res.status(400).send("Error retrieving products");
+    console.error("Error retrieving products:", err);
+    res.status(500).send("Error retrieving products");
   }
 });
 
-
-// to make product - only admin can add - MW 
+// to make product - only admin can add - MW
 // auth
 /**
  * @swagger
@@ -330,31 +377,36 @@ router.get("/", async (req, res) => {
 //   }
 // });
 
-/**to make product - anyone */ 
+/**to make product - anyone */
 router.post("/", upload.array("prodimg", 10), async (req, res) => {
   try {
-    // استخراج أسماء الملفات الخاصة بالصور من المرفقات
-    const imgUrls = req.files.map(file => file.filename);
+    // Extract image filenames from uploaded files
+    const imgUrls = req.files.map((file) => file.filename);
 
-    // إنشاء منتج جديد باستخدام Mongoose
+    // Create a new product with localized fields
     const prod = new Product({
-      name: req.body.name,
-      description: req.body.description,
-      price: req.body.price,
-      img_url: imgUrls.join(','), // تخزين الروابط كسلسلة مفصولة بفواصل (إذا كنت تفضل استخدام array مباشرة، يمكن تعديل هذا)
-      category: req.body.category,
+      name: { en: req.body.name_en, ar: req.body.name_ar }, // Expected to be an object with 'en' and 'ar' keys
+      description: { en: req.body.description_en, ar: req.body.description_ar }, // Expected to be an object with 'en' and 'ar' keys
+      price: Number(req.body.price), // Ensure price is a number
+      img_url: imgUrls.join(","), // Store as comma-separated string
+      category: { en: req.body.category_en, ar: req.body.category_ar }, // Expected to be an object with 'en' and 'ar' keys
+      show:
+        req.body.show !== undefined
+          ? req.body.show === "true" || req.body.show === true
+          : true, // Convert to boolean
     });
 
-    // حفظ المنتج الجديد في قاعدة البيانات
+    // Save the new product to the database
     await prod.save();
 
-    res.status(200).send("Product added successfully");
+    res.status(200).json({ message: "Product added successfully" });
   } catch (err) {
-    console.error('Error:', err);  // تسجيل الخطأ بالكامل للمساعدة في التصحيح
-    res.status(400).send("Product addition failed. Please check the request data.");
+    console.error("Error adding product:", err);
+    res
+      .status(500)
+      .send("Product addition failed. Please check the request data.");
   }
 });
-
 
 // search = sort
 /**
@@ -438,41 +490,43 @@ router.post("/", upload.array("prodimg", 10), async (req, res) => {
  *                   type: string
  *                   example: "Error message"
  */
-router.get('/searchsort', async (req, res) => {
-  const { search = '', sort_by = '', category = '' } = req.query;
+router.get("/searchsort", async (req, res) => {
+  const { search = "", sort_by = "", category = "" } = req.query;
+  const lang = req.lang;
 
+  // Determine sort order based on sort_by parameter
   let sort = {};
-  if (sort_by === 'name_asc') sort = { name: 1 };
-  if (sort_by === 'name_desc') sort = { name: -1 };
-  if (sort_by === 'price_asc') sort = { price: 1 };
-  if (sort_by === 'price_desc') sort = { price: -1 };
+  if (sort_by === "name_asc") sort[`name.${lang}`] = 1;
+  if (sort_by === "name_desc") sort[`name.${lang}`] = -1;
+  if (sort_by === "price_asc") sort["price"] = 1;
+  if (sort_by === "price_desc") sort["price"] = -1;
 
   try {
-    const products = await Product.find({
-      category: category || { $ne: null }, // Ensuring it works even if category is not provided
-      name: { $regex: search, $options: 'i' }, // Case-insensitive search for the product name
-    }).sort(sort);
+    // Build search and filter criteria
+    const filter = {
+      [`name.${lang}`]: { $regex: search, $options: "i" }, // Case-insensitive search
+    };
 
-    const transformedProducts = products.map(product => {
-      // Clone the product data
-      const productData = product.toObject(); // Convert Mongoose document to plain JavaScript object
+    if (category) {
+      filter[`category.${lang}`] = category;
+    }
 
-      // Transform the img_url field from a string to an array
-      if (productData.img_url) {
-        productData.img_urls = productData.img_url.split(',');
-      } else {
-        productData.img_urls = [];
-      }
+    // Find products matching the criteria and apply sorting
+    const products = await Product.find(filter).sort(sort);
 
-      // Remove the original img_url field if desired
-      delete productData.img_url;
+    if (!products.length) {
+      return res.status(404).send("No products match the search criteria.");
+    }
 
-      return productData;
-    });
+    // Transform products to include localized fields and img_urls array
+    const transformedProducts = products.map((product) =>
+      transformProductData(product, lang)
+    );
 
-    res.status(200).send(transformedProducts);
+    res.status(200).json(transformedProducts);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Error in searchsort route:", error);
+    res.status(500).json({ error: "Error retrieving products." });
   }
 });
 
@@ -542,7 +596,9 @@ router.post("/feedback", async (req, res) => {
 
     const { productId, feedback, rate } = req.body;
     if (!productId || !feedback || !rate) {
-      return res.status(400).send("Missing required fields: productId, feedback, or rate.");
+      return res
+        .status(400)
+        .send("Missing required fields: productId, feedback, or rate.");
     }
 
     // Create feedback using Mongoose
@@ -550,14 +606,14 @@ router.post("/feedback", async (req, res) => {
       userId: new mongoose.Types.ObjectId(userid), // Correctly instantiate ObjectId
       productId: new mongoose.Types.ObjectId(productId), // Correctly instantiate ObjectId
       feedback,
-      rate
+      rate,
     });
 
     await newFeedback.save();
 
     return res.status(200).send("Feedback on product added successfully.");
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error("Error:", err.message);
     return res.status(400).send("Failed to add feedback on product.");
   }
 });
@@ -627,35 +683,32 @@ router.get("/feedbacks/:productId", async (req, res) => {
 
   // Check if the productId is a valid ObjectId
   if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).send("Invalid productId format.");
+    return res.status(400).send("Invalid productId format.");
   }
 
   try {
-      const feedbacks = await Feedback.find({
-          productId: new mongoose.Types.ObjectId(productId), // Use the valid ObjectId
-      })
-      .populate('userId', 'name') // Ensure correct field for user
+    const feedbacks = await Feedback.find({
+      productId: new mongoose.Types.ObjectId(productId), // Use the valid ObjectId
+    })
+      .populate("userId", "name") // Ensure correct field for user
       .sort({ createdAt: -1 }); // Sort by creation date
 
-      if (feedbacks.length === 0) {
-          return res.status(404).send("No feedback found for this product.");
-      }
+    if (feedbacks.length === 0) {
+      return res.status(404).send("No feedback found for this product.");
+    }
 
-      return res.status(200).json(feedbacks);
+    return res.status(200).json(feedbacks);
   } catch (err) {
-      console.error("Error:", err.message);
-      res.status(500).send("Error fetching feedbacks.");
+    console.error("Error fetching feedbacks:", err.message);
+    res.status(500).send("Error fetching feedbacks.");
   }
 });
-
 
 // // updateProductByID
 // router.put("/:id", auth, ProductsController.updateProductByID);
 
 // // deleteProductByID
 // router.delete("/:id", auth, ProductsController.deleteProductByID);
-
-
 
 // getProductByID
 /**
@@ -724,28 +777,28 @@ router.get("/feedbacks/:productId", async (req, res) => {
  *               type: string
  *               example: "Error retrieving product"
  */
+
 router.get("/:id", async (req, res) => {
   try {
-    // البحث عن منتج باستخدام الـ id عبر Mongoose
-    const product = await Product.findById(req.params.id);
+    const lang = req.lang;
+    const productId = req.params.id;
 
-    // تحقق من عدم وجود المنتج
+    // Find product by ID
+    const product = await Product.findById(productId);
+
+    // Check if product exists
     if (!product) {
-      return res.status(404).send("Product with this id not found");
+      return res.status(404).send("Product with this ID not found.");
     }
 
-    // تحويل بيانات المنتج إلى كائن JavaScript
-    const productData = product.toObject();
+    // Transform product data to include localized fields and img_urls array
+    const transformedProduct = transformProductData(product, lang);
 
-    // تحويل img_url من سلسلة نصية إلى مصفوفة
-    productData.img_urls = productData.img_url ? productData.img_url.split(',') : [];
-
-    res.status(200).send(productData);
+    res.status(200).json(transformedProduct);
   } catch (err) {
-    console.error(err); // تسجيل الخطأ بالكامل للمساعدة في التصحيح
-    res.status(400).send("Error retrieving product");
+    console.error("Error retrieving product:", err);
+    res.status(500).send("Error retrieving product.");
   }
 });
-
 
 module.exports = router;

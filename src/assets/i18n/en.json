@@ -1,0 +1,20 @@
+{
+  "header": {
+    "home": "home",
+    "about": "about",
+    "contact": "contact"
+  },
+  "cart": {
+    "cartTotalItems": "Cart - {{value}} items",
+    "quantity": "quantity",
+    "summary": "summary",
+    "subtotal": "subtotal ({{value}} items): ",
+    "shipping": "shipping",
+    "includingVat": "(includingVAT)",
+    "totalAmount": " Total amount",
+    "checkout": "Go to checkout",
+    "emptyCart": " Your cart is empty",
+    "addProduct": "Add some products to your cart to get started.",
+    "continueShopping": " Continue Shopping "
+  }
+}

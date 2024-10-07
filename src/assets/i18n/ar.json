@@ -1,0 +1,20 @@
+{
+  "header": {
+    "home": "الصفحة الرئيسية",
+    "about": "حول",
+    "contact": "اتصل بنا"
+  },
+  "cart": {
+    "cartTotalItems": "السلة - {{value}} عناصر",
+    "quantity": "الكمية",
+    "summary": "الإجمالي",
+    "subtotal": "الإجمالي الفرعي (من السلع{{value}}):",
+    "shipping": "الشحن",
+    "includingVat": "(بما في ذلك ضريبة القيمة المضافة)",
+    "totalAmount": " المبلغ الإجمالي",
+    "checkout": "الانتقال إلى الدفع",
+    "emptyCart": " سلة التسوق الخاصة بك فارغة",
+    "addProduct": "أضف بعض المنتجات إلى سلة التسوق للبدء",
+    "continueShopping": " متابعة التسوق "
+  }
+}

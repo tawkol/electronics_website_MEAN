@@ -1,0 +1,35 @@
+<nav class="navbar navbar-expand-lg bg-body-tertiary py-3">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#">Navbar</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" (click)="toggleNavbar()">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav" [class]="{ 'show': !isNavbarCollapsed }">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                <li class="nav-item">
+                    <a class="nav-link active" aria-current="page" href="#">{{'header.home' | translate}}</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">{{'header.about' | translate}}</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link disabled" aria-disabled="true">{{'header.contact' | translate}}</a>
+                </li>
+            </ul>
+            <div class="utilites d-flex justifiy-content-center align-items-center gap-3">
+                <button class="btn btn-outline-secondary rounded-5 position-relative" [routerLink]="['/cart']">
+                    <fa-icon [icon]="ShoppingCart" />
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                        {{ cartService.getCartItemCount() }}
+                        <span class="visually-hidden">items in cart</span>
+                    </span>
+                </button>
+                <select class="form-select" aria-label="language selector" (change)="switchLanguage($event)">
+                    <option [selected]="getCurrentLang()==='en'" value="en">English</option>
+                    <option [selected]="getCurrentLang()==='ar'" value="ar">Arabic</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</nav>
